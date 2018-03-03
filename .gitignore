@@ -11,4 +11,4 @@
 .DS_Store
 
 # Local configs
-config/config.rb
+config/config.yml

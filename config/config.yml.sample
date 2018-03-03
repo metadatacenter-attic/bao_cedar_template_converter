@@ -1,0 +1,6 @@
+default:
+  cedar_template: "templates/cedar-base-%{name}.json"
+  bp_base_url: "http://data.bioontology.org"
+  bp_search_endpoint: "/search"
+  bp_ontologies_endpoint: "/ontologies"
+  bp_api_key: "<your bioportal api key>"

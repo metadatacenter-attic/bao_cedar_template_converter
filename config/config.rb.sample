@@ -1,7 +1,0 @@
-require_relative '../lib/appdata'
-
-Appdata.config[:cedar_template] = lambda {|name| "templates/cedar-base-#{name}.json"}
-Appdata.config[:bp_base_url] = "http://data.bioontology.org"
-Appdata.config[:bp_search_url] = "#{Appdata.config[:bp_base_url]}/search"
-Appdata.config[:bp_ontologies_url] = "#{Appdata.config[:bp_base_url]}/ontologies"
-Appdata.config[:bp_api_key] = "<your bioportal api key>"

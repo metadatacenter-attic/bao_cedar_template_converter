@@ -4,7 +4,7 @@ require 'pry'
 require 'securerandom'
 require 'rest-client'
 require 'optparse'
-require_relative 'config/config'
+require_relative 'lib/config'
 
 
 def sanitize_input_for_json(str)
@@ -12,7 +12,7 @@ def sanitize_input_for_json(str)
 end
 
 def create_base_entity(item, type)
-  base_template = File.read(Appdata.config[:cedar_template].call(type))
+  base_template = File.read(Global.config.cedar_template % {name: type})
   template_fields = {
       guid: SecureRandom.uuid,
       name: sanitize_input_for_json(item["name"]),
@@ -27,7 +27,7 @@ def get_acronym_from_id(id)
 end
 
 def get_bp_ontologies()
-  response_raw = RestClient.get(Appdata.config[:bp_ontologies_url], {Authorization: "apikey token=#{Appdata.config[:bp_api_key]}", params: {no_links: true, no_context: true}})
+  response_raw = RestClient.get(Global.config.bp_base_url + Global.config.bp_ontologies_endpoint, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: {no_links: true, no_context: true}})
   bp_ontologies = {}
 
   if response_raw.code == 200
@@ -41,7 +41,7 @@ def get_bp_ontologies()
 end
 
 def find_term_in_bioportal(term_id)
-  response_raw = RestClient.get(Appdata.config[:bp_search_url], {Authorization: "apikey token=#{Appdata.config[:bp_api_key]}", params: {q: term_id, require_exact_match: true, no_context: true}})
+  response_raw = RestClient.get(Global.config.bp_base_url + Global.config.bp_search_endpoint, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: {q: term_id, require_exact_match: true, no_context: true}})
   term = false
 
   if response_raw.code == 200
@@ -227,8 +227,6 @@ def main()
   bao_full_template = File.read(options[:source_file])
   bao_data = MultiJson.load(bao_full_template)
   bao_cedar_template = create_cedar_template(bao_data, bp_ontologies, bp_terms)
-
-  binding.pry
 end
 
 main()

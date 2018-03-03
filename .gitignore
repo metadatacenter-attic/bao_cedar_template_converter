@@ -1,0 +1,14 @@
+# RubyMine editor files
+.idea
+
+# Sublime editor files
+*.sublime-project
+*.sublime-workspace
+
+# Rbenv artifacts
+.ruby-version
+
+.DS_Store
+
+# Local configs
+config/config.rb

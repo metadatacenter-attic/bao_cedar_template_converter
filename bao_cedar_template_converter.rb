@@ -204,11 +204,11 @@ def parse_options()
   opt_parser = OptionParser.new do |opts|
     opts.banner = "Usage: #{File.basename(__FILE__)} [options]"
 
-    opts.on('-i', '--input PATH_TO_SOURCE_TEMPLATE', "Optional path to the source template file (default: #{Global.config.default_input_file})") { |v|
+    opts.on('-s', '--source PATH_TO_SOURCE_TEMPLATE', "Optional path to the source template file (default: #{Global.config.default_input_file})") { |v|
       options[:input_file] = v
     }
 
-    opts.on('-o', '--output PATH_TO_DESTINATION_TEMPLATE', "Optional path to the destination template file (default: #{Global.config.default_output_file})") { |v|
+    opts.on('-d', '--destination PATH_TO_DESTINATION_TEMPLATE', "Optional path to the destination template file (default: #{Global.config.default_output_file})") { |v|
       options[:output_file] = v
     }
 

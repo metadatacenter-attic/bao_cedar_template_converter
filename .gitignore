@@ -12,3 +12,6 @@
 
 # Local configs
 config/config.yml
+
+# Output file
+data/cedar-bao-schema.json

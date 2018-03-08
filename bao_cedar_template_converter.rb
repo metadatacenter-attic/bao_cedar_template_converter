@@ -4,6 +4,7 @@ require 'pry'
 require 'securerandom'
 require 'rest-client'
 require 'optparse'
+require 'benchmark'
 require_relative 'lib/config'
 
 
@@ -17,7 +18,7 @@ def create_base_entity(item, type)
       guid: SecureRandom.uuid,
       name: sanitize_input_for_json(item["name"]),
       descr: sanitize_input_for_json(item["descr"]),
-      created_on: DateTime.now
+      created_on: DateTime.now.strftime
   }
   base_template % template_fields
 end
@@ -78,7 +79,7 @@ def create_cedar_value(orig_value, bp_ontologies, bp_terms)
       ont_acronym = get_acronym_from_id(bp_term["links"]["ontology"])
       cedar_value = {}
       cedar_val = {
-        "source" => "#{bp_ontologies[ont_acronym]} (BAO)",
+        "source" => "#{bp_ontologies[ont_acronym]} (#{ont_acronym})",
         "acronym" => ont_acronym,
         "uri" => orig_value["uri"],
         "name" => bp_term["prefLabel"],
@@ -138,55 +139,53 @@ def create_cedar_field(orig_field, bp_ontologies, bp_terms)
   cedar_field
 end
 
-
-def create_cedar_element(orig_element, bp_ontologies, bp_terms)
-  base_cedar_element = create_base_entity(orig_element, "element")
-
+def add_field_or_element(orig_field_or_elem, cedar_field_or_elem, cedar_template)
+  field_name = cedar_field_or_elem["schema:name"]
+  cedar_template["properties"][field_name] = cedar_field_or_elem
+  cedar_template["_ui"]["order"] << field_name
+  cedar_template["_ui"]["propertyLabels"][field_name] = field_name
+  cedar_template["properties"]["@context"]["properties"][field_name] = {"enum" => [orig_field_or_elem["propURI"] || orig_field_or_elem["groupURI"]]}
+  cedar_template["properties"]["@context"]["required"] = [] if cedar_template["properties"]["@context"]["required"].nil?
+  cedar_template["properties"]["@context"]["required"] << field_name
+  cedar_template["required"] << field_name
+  cedar_template
 end
-
-
-
-
 
 def add_fields_to_template(orig_fields, cedar_template, bp_ontologies, bp_terms)
   orig_fields = orig_fields.is_a?(Array) ? orig_fields : [orig_fields]
 
   orig_fields.each do |orig_field|
     cedar_field = create_cedar_field(orig_field, bp_ontologies, bp_terms)
-    field_name = cedar_field["schema:name"]
-    cedar_template["properties"][field_name] = cedar_field
-    cedar_template["_ui"]["order"] << field_name
-    cedar_template["_ui"]["propertyLabels"][field_name] = field_name
-    cedar_template["properties"]["@context"]["properties"][field_name] = {"enum" => [orig_field["propURI"]]}
-    cedar_template["properties"]["@context"]["required"] << field_name
-    cedar_template["required"] << field_name
+    add_field_or_element(orig_field, cedar_field, cedar_template)
   end
 
-  cedar_template["pav:lastUpdatedOn"] = DateTime.now
-
+  cedar_template["pav:lastUpdatedOn"] = DateTime.now.strftime
   cedar_template
 end
 
-
-
-
-
-
 def add_fields_to_element(orig_fields, cedar_element, bp_ontologies, bp_terms)
+  add_fields_to_template(orig_fields, cedar_element, bp_ontologies, bp_terms)
+end
+
+def create_cedar_element(orig_element, bp_ontologies, bp_terms)
+  base_cedar_element = create_base_entity(orig_element, "element")
+  cedar_element = MultiJson.load(base_cedar_element)
+  orig_element_fields = orig_element["assignments"]
+  add_fields_to_element(orig_element_fields, cedar_element, bp_ontologies, bp_terms)
   cedar_element
 end
 
 def add_elements_to_template(orig_elements, cedar_template, bp_ontologies, bp_terms)
+  orig_elements = orig_elements.is_a?(Array) ? orig_elements : [orig_elements]
+
+  orig_elements.each do |orig_element|
+    cedar_element = create_cedar_element(orig_element, bp_ontologies, bp_terms)
+    add_field_or_element(orig_element, cedar_element, cedar_template)
+  end
+
+  cedar_template["pav:lastUpdatedOn"] = DateTime.now.strftime
   cedar_template
 end
-
-
-
-
-
-
-
-
 
 def create_cedar_template(orig_template_data, bp_ontologies, bp_terms)
   orig_template_root = orig_template_data["root"]
@@ -194,8 +193,9 @@ def create_cedar_template(orig_template_data, bp_ontologies, bp_terms)
   cedar_template = MultiJson.load(base_cedar_template)
   orig_template_fields = orig_template_root["assignments"]
   orig_template_elements = orig_template_root["subGroups"]
-  add_fields_to_template(orig_template_fields, cedar_template, bp_ontologies, bp_terms)
-  add_elements_to_template(orig_template_elements, cedar_template, bp_ontologies, bp_terms)
+  add_fields_to_template(orig_template_fields, cedar_template, bp_ontologies, bp_terms) unless orig_template_fields.nil? || orig_template_fields.empty?
+  add_elements_to_template(orig_template_elements, cedar_template, bp_ontologies, bp_terms) unless orig_template_elements.nil? || orig_template_elements.empty?
+  cedar_template
 end
 
 def parse_options()
@@ -203,7 +203,15 @@ def parse_options()
 
   opt_parser = OptionParser.new do |opts|
     opts.banner = "Usage: #{File.basename(__FILE__)} [options]"
-    opts.on('-f', '--filename PATH_TO_SOURCE_TEMPLATE', 'Source template path') { |v| options[:source_file] = v }
+
+    opts.on('-i', '--input PATH_TO_SOURCE_TEMPLATE', "Optional path to the source template file (default: #{Global.config.default_input_file})") { |v|
+      options[:input_file] = v
+    }
+
+    opts.on('-o', '--output PATH_TO_DESTINATION_TEMPLATE', "Optional path to the destination template file (default: #{Global.config.default_output_file})") { |v|
+      options[:output_file] = v
+    }
+
     opts.on('-h', '--help', 'Display this screen') do
       puts opts
       exit
@@ -211,22 +219,32 @@ def parse_options()
   end
 
   opt_parser.parse!
-
-  unless options[:source_file]
-    puts opt_parser.help
-    exit(1)
-  end
+  options[:input_file] ||= Global.config.default_input_file
+  options[:output_file] ||= Global.config.default_output_file
 
   options
 end
 
 def main()
   options = parse_options()
-  bp_ontologies = get_bp_ontologies()
-  bp_terms = {}
-  bao_full_template = File.read(options[:source_file])
-  bao_data = MultiJson.load(bao_full_template)
-  bao_cedar_template = create_cedar_template(bao_data, bp_ontologies, bp_terms)
+
+  puts "Generating CEDAR template..."
+  puts "Source template: #{options[:input_file]}"
+  puts "Destination template: #{options[:output_file]}"
+
+  time = Benchmark.realtime do
+    bp_ontologies = get_bp_ontologies()
+    bp_terms = {}
+    bao_full_template = File.read(options[:input_file])
+    bao_data = MultiJson.load(bao_full_template)
+    bao_cedar_template = create_cedar_template(bao_data, bp_ontologies, bp_terms)
+
+    File.open(options[:output_file], "w") do |f|
+      f.write(JSON.pretty_generate(bao_cedar_template))
+    end
+  end
+
+  puts "Completed template conversion in #{time} seconds."
 end
 
 main()

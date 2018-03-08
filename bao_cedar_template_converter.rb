@@ -35,7 +35,7 @@ def get_bp_ontologies()
     response = MultiJson.load(response_raw)
     response.each {|ont| bp_ontologies[ont["acronym"]] = ont["name"]}
   else
-    raise Exception, "Unable to query BioPortal /ontologies endpoint. Response code: #{response_raw.code}."
+    raise Exception, "Unable to query BioPortal #{Global.config.bp_ontologies_endpoint} endpoint. Response code: #{response_raw.code}."
   end
 
   bp_ontologies
@@ -52,7 +52,7 @@ def find_term_in_bioportal(term_id)
       term = response["collection"][0]
     end
   else
-    raise Exception, "Unable to query BioPortal /search endpoint. Response code: #{response_raw.code}."
+    raise Exception, "Unable to query BioPortal #{Global.config.bp_search_endpoint} endpoint. Response code: #{response_raw.code}."
   end
 
   term

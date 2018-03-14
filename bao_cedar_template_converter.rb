@@ -256,6 +256,9 @@ end
 
 def main()
   options = parse_options()
+
+  dirname = File.dirname(options[:log_file])
+  FileUtils.mkdir_p(dirname) unless File.directory?(dirname)
   logger = Logger.new(options[:log_file])
 
   msg = "Generating CEDAR template..."

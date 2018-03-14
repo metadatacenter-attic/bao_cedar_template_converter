@@ -11,7 +11,7 @@
 .DS_Store
 
 # Logs
-logs/
+logs/*.log
 
 # Local configs
 config/config.yml

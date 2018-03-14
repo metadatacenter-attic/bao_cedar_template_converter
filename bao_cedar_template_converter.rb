@@ -84,16 +84,23 @@ def create_cedar_value(orig_value, bp_ontologies, bp_terms)
       ont_acronym = get_acronym_from_id(bp_term["links"]["ontology"])
       cedar_value = {}
       cedar_val = {
-        "source" => "#{bp_ontologies[ont_acronym]} (#{ont_acronym})",
-        "acronym" => ont_acronym,
         "uri" => orig_value["uri"],
-        "name" => bp_term["prefLabel"],
-        "maxDepth" => 0
+        "source" => "#{bp_ontologies[ont_acronym]} (#{ont_acronym})"
       }
 
       if orig_value["wholeBranch"] && orig_value["wholeBranch"] == true
+        cedar_val.merge!({
+          "acronym" => ont_acronym,
+          "name" => bp_term["prefLabel"],
+          "maxDepth" => 0
+        })
         cedar_value["branch"] = cedar_val
       else
+        cedar_val.merge!({
+          "prefLabel" => bp_term["prefLabel"],
+          "label" => bp_term["prefLabel"],
+          "type" => "OntologyClass"
+        })
         cedar_value["class"] = cedar_val
       end
     end

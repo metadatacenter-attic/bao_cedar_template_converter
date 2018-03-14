@@ -19,7 +19,10 @@ The script accepts the following parameters (all are OPTIONAL):
         
     -d PATH_TO_DESTINATION_TEMPLATE  Optional path to the destination template file
         --destination                Default: data/cedar-bao-schema.json
-        
+     
+    -l, PATH_TO_LOG_FILE             Optional path to the log file        
+        --log                        Default: logs/bao-to-cedar.log
+         
     -h  --help                       Display help screen
 </pre>
 

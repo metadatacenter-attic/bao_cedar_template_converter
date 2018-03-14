@@ -28,7 +28,7 @@ def get_acronym_from_id(id)
 end
 
 def get_bp_ontologies()
-  response_raw = RestClient.get(Global.config.bp_base_url + Global.config.bp_ontologies_endpoint, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: {no_links: true, no_context: true}})
+  response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_ontologies_endpoint, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: {no_links: true, no_context: true}})
   bp_ontologies = {}
 
   if response_raw.code == 200
@@ -42,7 +42,7 @@ def get_bp_ontologies()
 end
 
 def find_term_in_bioportal(term_id)
-  response_raw = RestClient.get(Global.config.bp_base_url + Global.config.bp_search_endpoint, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: {q: term_id, require_exact_match: true, no_context: true}})
+  response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_search_endpoint, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: {q: term_id, require_exact_match: true, no_context: true}})
   term = false
 
   if response_raw.code == 200
@@ -56,6 +56,11 @@ def find_term_in_bioportal(term_id)
   end
 
   term
+end
+
+def validate_cedar_template(cedar_template_json)
+  response_raw = RestClient.post(Global.config.cedar_base_rest_url + Global.config.cedar_validator_endpoint, cedar_template_json, {Authorization: "apiKey #{Global.config.cedar_api_key}", 'Content-Type': 'application/json'})
+  MultiJson.load(response_raw)
 end
 
 def usable_value(val)
@@ -124,11 +129,15 @@ def create_cedar_field(orig_field, bp_ontologies, bp_terms)
     vc["ontologies"] = []
     vc["valueSets"] = []
 
-    unless branches.empty?
+    if branches.empty?
+      vc["branches"] = []
+    else
       vc["branches"] = branches
     end
 
-    unless classes.empty?
+    if classes.empty?
+      vc["classes"] = []
+    else
       vc["classes"] = classes
     end
 
@@ -137,6 +146,14 @@ def create_cedar_field(orig_field, bp_ontologies, bp_terms)
   end
 
   cedar_field
+end
+
+def empty_field?(cedar_field)
+  vc = cedar_field["_valueConstraints"]
+  (vc["ontologies"].nil? || vc["ontologies"].empty?) && \
+  (vc["valueSets"].nil? || vc["valueSets"].empty?) && \
+  (vc["branches"].nil? || vc["branches"].empty?) && \
+  (vc["classes"].nil? || vc["classes"].empty?)
 end
 
 def add_field_or_element(orig_field_or_elem, cedar_field_or_elem, cedar_template)
@@ -156,7 +173,7 @@ def add_fields_to_template(orig_fields, cedar_template, bp_ontologies, bp_terms)
 
   orig_fields.each do |orig_field|
     cedar_field = create_cedar_field(orig_field, bp_ontologies, bp_terms)
-    add_field_or_element(orig_field, cedar_field, cedar_template)
+    add_field_or_element(orig_field, cedar_field, cedar_template) unless empty_field?(cedar_field)
   end
 
   cedar_template["pav:lastUpdatedOn"] = DateTime.now.strftime
@@ -212,6 +229,10 @@ def parse_options()
       options[:output_file] = v
     }
 
+    opts.on('-l', '--log PATH_TO_LOG_FILE', "Optional path to the log file (default: #{Global.config.default_log_file_path})") { |v|
+      options[:log_file] = v
+    }
+
     opts.on('-h', '--help', 'Display this screen') do
       puts opts
       exit
@@ -221,16 +242,28 @@ def parse_options()
   opt_parser.parse!
   options[:input_file] ||= Global.config.default_input_file
   options[:output_file] ||= Global.config.default_output_file
+  options[:log_file] ||= Global.config.default_log_file_path
 
   options
 end
 
 def main()
   options = parse_options()
+  logger = Logger.new(options[:log_file])
 
-  puts "Generating CEDAR template..."
-  puts "Source template: #{options[:input_file]}"
-  puts "Destination template: #{options[:output_file]}"
+  msg = "Generating CEDAR template..."
+  puts msg
+  logger.info(msg)
+
+  puts "Logging output to #{options[:log_file]}"
+
+  msg = "Source template: #{options[:input_file]}"
+  puts msg
+  logger.info(msg)
+
+  msg = "Destination template: #{options[:output_file]}"
+  puts msg
+  logger.info(msg)
 
   time = Benchmark.realtime do
     bp_ontologies = get_bp_ontologies()
@@ -238,13 +271,43 @@ def main()
     bao_full_template = File.read(options[:input_file])
     bao_data = MultiJson.load(bao_full_template)
     bao_cedar_template = create_cedar_template(bao_data, bp_ontologies, bp_terms)
+    bao_cedar_template_json = JSON.pretty_generate(bao_cedar_template)
 
     File.open(options[:output_file], "w") do |f|
-      f.write(JSON.pretty_generate(bao_cedar_template))
+      f.write(bao_cedar_template_json)
+    end
+
+    resp = validate_cedar_template(bao_cedar_template_json)
+
+    if resp["validates"] === "true"
+      msg = "New template validated successfully by the CEDAR validator."
+      puts msg
+      logger.info(msg)
+    else
+      msg = "New template failed CEDAR validator with the following feedback (logged in #{options[:log_file]}):"
+      puts msg
+      logger.info(msg)
+
+      unless resp["errors"].empty?
+        puts
+        msg = "\nErrors:   #{JSON.pretty_generate(resp["errors"])}"
+        puts msg
+        logger.error(msg)
+      end
+
+      unless resp["warnings"].empty?
+        puts
+        msg = "\nWarnings: #{JSON.pretty_generate(resp["warnings"])}"
+        puts msg
+        logger.warn(msg)
+      end
+      puts
     end
   end
 
-  puts "Completed template conversion in #{time} seconds."
+  msg = "Completed template conversion and validation in #{time} seconds."
+  puts msg
+  logger.info(msg)
 end
 
 main()

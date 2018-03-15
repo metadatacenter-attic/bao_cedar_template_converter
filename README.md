@@ -10,6 +10,9 @@ Installation
     1. __bp_api_key__: "your-bioportal-api-key"
     2. __cedar_api_key__: "your-cedar-api-key"
 
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BioPortal API key can be found here: https://bioportal.bioontology.org/account<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CEDAR API key can be found here: https://cedar.metadatacenter.org/profile
+
 Execution:
 ----------------
 The script accepts the following parameters (all are OPTIONAL):

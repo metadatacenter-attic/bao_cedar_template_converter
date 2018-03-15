@@ -8,6 +8,7 @@ default:
   bp_ontologies_endpoint: "/ontologies"
   cedar_base_rest_url: "https://resource.metadatacenter.org"
   cedar_validator_endpoint: "/command/validate?resource_type=template"
+  cedar_templates_endpoint: "/templates"
 
   bp_api_key: "your-bioportal-api-key"
   cedar_api_key: "your-cedar-api-key"

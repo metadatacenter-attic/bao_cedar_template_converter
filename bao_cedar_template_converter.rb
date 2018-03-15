@@ -7,6 +7,8 @@ require 'optparse'
 require 'benchmark'
 require_relative 'lib/config'
 
+RESPONSE_UPLOAD_SUCCESS = 201
+RESPONSE_OK = 200
 
 def sanitize_input_for_json(str)
   str.gsub("\"", "'").gsub(/[\r\n\t]/, " ")
@@ -31,7 +33,7 @@ def get_bp_ontologies()
   response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_ontologies_endpoint, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: {no_links: true, no_context: true}})
   bp_ontologies = {}
 
-  if response_raw.code == 200
+  if response_raw.code === RESPONSE_OK
     response = MultiJson.load(response_raw)
     response.each {|ont| bp_ontologies[ont["acronym"]] = ont["name"]}
   else
@@ -45,7 +47,7 @@ def find_term_in_bioportal(term_id)
   response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_search_endpoint, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: {q: term_id, require_exact_match: true, no_context: true}})
   term = false
 
-  if response_raw.code == 200
+  if response_raw.code === RESPONSE_OK
     response = MultiJson.load(response_raw)
 
     if response["totalCount"] > 0
@@ -60,7 +62,28 @@ end
 
 def validate_cedar_template(cedar_template_json)
   response_raw = RestClient.post(Global.config.cedar_base_rest_url + Global.config.cedar_validator_endpoint, cedar_template_json, {Authorization: "apiKey #{Global.config.cedar_api_key}", 'Content-Type': 'application/json'})
-  MultiJson.load(response_raw)
+  {status_code: response_raw.code, response: MultiJson.load(response_raw)}
+end
+
+def post_template_to_cedar(cedar_template_json)
+  cedar_template = MultiJson.load(cedar_template_json)
+  cedar_template.delete("@id")
+  cedar_template.delete("pav:createdOn")
+  cedar_template.delete("pav:createdBy")
+  cedar_template.delete("pav:lastUpdatedOn")
+  cedar_template.delete("oslc:modifiedBy")
+  cedar_template_json = cedar_template.to_json
+  response_raw = nil
+  resp = nil
+
+  begin
+    response_raw = RestClient.post(Global.config.cedar_base_rest_url + Global.config.cedar_templates_endpoint, cedar_template_json, {Authorization: "apiKey #{Global.config.cedar_api_key}", 'Content-Type': 'application/json'})
+    resp = {status_code: response_raw.code, response: MultiJson.load(response_raw)}
+  rescue Exception => e
+    resp = {status_code: e.http_code, response: MultiJson.load(e.http_body)}
+  end
+
+  resp
 end
 
 def usable_value(val)
@@ -240,6 +263,10 @@ def parse_options()
       options[:log_file] = v
     }
 
+    opts.on('-p', '--post-to-cedar [true/false]', 'Post template to CEDAR (if it passes validation) (default: false)') do
+      options[:post_to_cedar] = true
+    end
+
     opts.on('-h', '--help', 'Display this screen') do
       puts opts
       exit
@@ -250,11 +277,13 @@ def parse_options()
   options[:input_file] ||= Global.config.default_input_file
   options[:output_file] ||= Global.config.default_output_file
   options[:log_file] ||= Global.config.default_log_file_path
-
+  options[:post_to_cedar] ||= false
+  options[:post_to_cedar] = false unless options[:post_to_cedar] === true
   options
 end
 
 def main()
+  response_post = {status_code: -1}
   options = parse_options()
 
   dirname = File.dirname(options[:log_file])
@@ -287,27 +316,51 @@ def main()
       f.write(bao_cedar_template_json)
     end
 
-    resp = validate_cedar_template(bao_cedar_template_json)
+    response_validate = validate_cedar_template(bao_cedar_template_json)
+    resp_validate = response_validate[:response]
 
-    if resp["validates"] === "true"
+    if resp_validate["validates"] === "true"
       msg = "New template validated successfully by the CEDAR validator."
       puts msg
       logger.info(msg)
+
+      if options[:post_to_cedar]
+        msg = "Uploading new template to CEDAR..."
+        puts msg
+        logger.info(msg)
+
+        response_post = post_template_to_cedar(bao_cedar_template_json)
+
+        if response_post[:status_code] === RESPONSE_UPLOAD_SUCCESS
+          msg = "New template successfully uploaded to CEDAR."
+          puts msg
+          logger.info(msg)
+        else
+          resp = response_post[:response]
+
+          msg = "New template failed CEDAR upload with the following feedback (logged in #{options[:log_file]}):"
+          puts msg
+          logger.info(msg)
+
+          msg = "\nResponse Code: #{response_post[:status_code]}\n#{JSON.pretty_generate(response_post[:response])}"
+          puts msg
+          logger.error(msg)
+        end
+      end
+
     else
       msg = "New template failed CEDAR validator with the following feedback (logged in #{options[:log_file]}):"
       puts msg
       logger.info(msg)
 
-      unless resp["errors"].empty?
-        puts
-        msg = "\nErrors:   #{JSON.pretty_generate(resp["errors"])}"
+      unless resp_validate["errors"].empty?
+        msg = "\nErrors:   #{JSON.pretty_generate(resp_validate["errors"])}"
         puts msg
         logger.error(msg)
       end
 
-      unless resp["warnings"].empty?
-        puts
-        msg = "\nWarnings: #{JSON.pretty_generate(resp["warnings"])}"
+      unless resp_validate["warnings"].empty?
+        msg = "\nWarnings: #{JSON.pretty_generate(resp_validate["warnings"])}"
         puts msg
         logger.warn(msg)
       end
@@ -315,7 +368,11 @@ def main()
     end
   end
 
-  msg = "Completed template conversion and validation in #{time} seconds."
+  if response_post[:status_code] === RESPONSE_UPLOAD_SUCCESS
+    msg = "Completed template conversion, validation and upload in #{time} seconds."
+  else
+    msg = "Completed template conversion and validation in #{time} seconds."
+  end
   puts msg
   logger.info(msg)
 end

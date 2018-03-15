@@ -18,7 +18,8 @@ Execution:
 The script accepts the following parameters (all are OPTIONAL):
 <pre>
     -s PATH_TO_SOURCE_TEMPLATE       Optional path to the source template file 
-        --source                     Default: latest version of template is pulled from https://github.com/cdd/bioassay-template/blob/master/data/template/schema.json
+        --source                     Default: latest version of template is pulled from:
+                                     https://github.com/cdd/bioassay-template/blob/master/data/template/schema.json
         
     -d PATH_TO_DESTINATION_TEMPLATE  Optional path to the destination template file
         --destination                Default: data/cedar-bao-schema.json

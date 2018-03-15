@@ -18,7 +18,7 @@ Execution:
 The script accepts the following parameters (all are OPTIONAL):
 <pre>
     -s PATH_TO_SOURCE_TEMPLATE       Optional path to the source template file 
-        --source                     Default: data/bao-schema.json
+        --source                     Default: latest version of template is pulled from https://github.com/cdd/bioassay-template/blob/master/data/template/schema.json
         
     -d PATH_TO_DESTINATION_TEMPLATE  Optional path to the destination template file
         --destination                Default: data/cedar-bao-schema.json
@@ -44,19 +44,27 @@ Run Example:
 
 `$ bundle exec ruby bao_cedar_template_converter.rb -s data/bao-schema.json -d data/cedar-bao-schema.json -p true`
 
+#### Generate template by pulling the source file from BAO Github repo and post result to CEDAR:
+
+`$ bundle exec ruby bao_cedar_template_converter.rb -p true`
+
 Sample Output:
 ----------------
 #### Success:
 <pre>
-$ bundle exec ruby bao_cedar_template_converter.rb -s /Downloads/bao-schema-orig.json -p true
+$ bundle exec ruby bao_cedar_template_converter.rb -p true
 Generating CEDAR template...
 Logging output to logs/bao-to-cedar.log
-Source template: /Downloads/bao-schema-orig.json
+Source template: https://github.com/cdd/bioassay-template/blob/master/data/template/schema.json
 Destination template: data/cedar-bao-schema.json
-New template validated successfully by the CEDAR validator.
+Downloading source template from https://github.com/cdd/bioassay-template/blob/master/data/template/schema.json...
+Source template downloaded successfully. Processing...
+Completed generating the new template.
+Running the template through the CEDAR validator...
+New template validated successfully.
 Uploading new template to CEDAR...
 New template successfully uploaded to CEDAR.
-Completed template conversion, validation and upload in 16.74563400000261 seconds.
+Completed template conversion, validation and upload in 16.811006000003545 seconds.
 </pre>
 #### Failure:
 <pre>

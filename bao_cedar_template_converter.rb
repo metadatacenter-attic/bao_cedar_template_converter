@@ -5,10 +5,12 @@ require 'securerandom'
 require 'rest-client'
 require 'optparse'
 require 'benchmark'
+require 'octokit'
 require_relative 'lib/config'
 
 RESPONSE_UPLOAD_SUCCESS = 201
 RESPONSE_OK = 200
+BAO_GITHUB_PATH = "https://github.com/#{Global.config.bao_github_repo_user}/#{Global.config.bao_template_github_repo}/blob/master#{Global.config.bao_github_template_path}"
 
 def sanitize_input_for_json(str)
   str.gsub("\"", "'").gsub(/[\r\n\t]/, " ")
@@ -27,6 +29,14 @@ end
 
 def get_acronym_from_id(id)
   id.to_s.split("/")[-1]
+end
+
+def get_bao_template_from_github()
+  user = Octokit.user(Global.config.bao_github_repo_user)
+  repos = Hash[user.rels[:repos].get.data.map {|r| [r.name, Octokit::Repository.new(r.full_name)]}]
+  bioassay_repo = repos[Global.config.bao_template_github_repo]
+  api_response = Octokit.contents bioassay_repo, path: Global.config.bao_github_template_path
+  Base64.decode64(api_response.content)
 end
 
 def get_bp_ontologies()
@@ -251,7 +261,7 @@ def parse_options()
   opt_parser = OptionParser.new do |opts|
     opts.banner = "Usage: #{File.basename(__FILE__)} [options]"
 
-    opts.on('-s', '--source PATH_TO_SOURCE_TEMPLATE', "Optional path to the source template file (default: #{Global.config.default_input_file})") { |v|
+    opts.on('-s', '--source PATH_TO_SOURCE_TEMPLATE', "Optional path to the source template file (default: latest version of template is pulled from #{BAO_GITHUB_PATH})") { |v|
       options[:input_file] = v
     }
 
@@ -274,7 +284,7 @@ def parse_options()
   end
 
   opt_parser.parse!
-  options[:input_file] ||= Global.config.default_input_file
+  options[:input_file] ||= :github
   options[:output_file] ||= Global.config.default_output_file
   options[:log_file] ||= Global.config.default_log_file_path
   options[:post_to_cedar] ||= false
@@ -284,6 +294,7 @@ end
 
 def main()
   response_post = {status_code: -1}
+  bao_full_template = nil
   options = parse_options()
 
   dirname = File.dirname(options[:log_file])
@@ -296,7 +307,7 @@ def main()
 
   puts "Logging output to #{options[:log_file]}"
 
-  msg = "Source template: #{options[:input_file]}"
+  msg = "Source template: #{options[:input_file] === :github ? BAO_GITHUB_PATH : options[:input_file]}"
   puts msg
   logger.info(msg)
 
@@ -307,7 +318,20 @@ def main()
   time = Benchmark.realtime do
     bp_ontologies = get_bp_ontologies()
     bp_terms = {}
-    bao_full_template = File.read(options[:input_file])
+
+    if options[:input_file] === :github
+      msg = "Downloading source template from #{BAO_GITHUB_PATH}..."
+      puts msg
+      logger.info(msg)
+      bao_full_template = get_bao_template_from_github()
+      sleep(1)
+      msg = "Source template downloaded successfully. Processing..."
+      puts msg
+      logger.info(msg)
+    else
+      bao_full_template = File.read(options[:input_file])
+    end
+
     bao_data = MultiJson.load(bao_full_template)
     bao_cedar_template = create_cedar_template(bao_data, bp_ontologies, bp_terms)
     bao_cedar_template_json = JSON.pretty_generate(bao_cedar_template)

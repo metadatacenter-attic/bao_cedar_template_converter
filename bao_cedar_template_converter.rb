@@ -316,11 +316,19 @@ def main()
       f.write(bao_cedar_template_json)
     end
 
+    msg = "Completed generating the new template."
+    puts msg
+    logger.info(msg)
+
+    msg = "Running the template through the CEDAR validator..."
+    puts msg
+    logger.info(msg)
+
     response_validate = validate_cedar_template(bao_cedar_template_json)
     resp_validate = response_validate[:response]
 
     if resp_validate["validates"] === "true"
-      msg = "New template validated successfully by the CEDAR validator."
+      msg = "New template validated successfully."
       puts msg
       logger.info(msg)
 
@@ -349,7 +357,7 @@ def main()
       end
 
     else
-      msg = "New template failed CEDAR validator with the following feedback (logged in #{options[:log_file]}):"
+      msg = "New template failed validation with the following feedback (logged in #{options[:log_file]}):"
       puts msg
       logger.info(msg)
 

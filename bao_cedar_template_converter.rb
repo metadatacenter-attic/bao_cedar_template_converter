@@ -320,7 +320,7 @@ def main()
     bp_terms = {}
 
     if options[:input_file] === :github
-      msg = "Downloading source template from #{BAO_GITHUB_PATH}..."
+      msg = "Downloading source template from Github..."
       puts msg
       logger.info(msg)
       bao_full_template = get_bao_template_from_github()

@@ -75,7 +75,16 @@ def validate_cedar_template(cedar_template_json)
   {status_code: response_raw.code, response: MultiJson.load(response_raw)}
 end
 
-def post_template_to_cedar(cedar_template_json)
+def post_template_to_cedar(cedar_template_json, template_type)
+  endpoint = nil
+
+  case template_type
+  when 'element'
+    endpoint = Global.config.cedar_template_elements_endpoint
+  else
+    endpoint = Global.config.cedar_templates_endpoint
+  end
+
   cedar_template = MultiJson.load(cedar_template_json)
   cedar_template.delete("@id")
   cedar_template.delete("pav:createdOn")
@@ -87,7 +96,7 @@ def post_template_to_cedar(cedar_template_json)
   resp = nil
 
   begin
-    response_raw = RestClient.post(Global.config.cedar_base_rest_url + Global.config.cedar_templates_endpoint, cedar_template_json, {Authorization: "apiKey #{Global.config.cedar_api_key}", 'Content-Type': 'application/json'})
+    response_raw = RestClient.post(Global.config.cedar_base_rest_url + endpoint, cedar_template_json, {Authorization: "apiKey #{Global.config.cedar_api_key}", 'Content-Type': 'application/json'})
     resp = {status_code: response_raw.code, response: MultiJson.load(response_raw)}
   rescue Exception => e
     resp = {status_code: e.http_code, response: MultiJson.load(e.http_body)}
@@ -142,6 +151,12 @@ def create_cedar_value(orig_value, bp_ontologies, bp_terms)
   cedar_value
 end
 
+def enable_uri_value_for_field(cedar_field)
+  cedar_field["properties"].delete("@value")
+  cedar_field["properties"]["@id"] = {"type" => "string", "format" => "uri"}
+  cedar_field
+end
+
 def create_cedar_field(orig_field, bp_ontologies, bp_terms)
   base_cedar_field = create_base_entity(orig_field, "field")
   cedar_field = MultiJson.load(base_cedar_field)
@@ -157,10 +172,10 @@ def create_cedar_field(orig_field, bp_ontologies, bp_terms)
         key, value = converted_val.first
 
         case key
-          when "branch"
-            branches << value
-          when "class"
-            classes << value
+        when "branch"
+          branches << value
+        when "class"
+          classes << value
         end
       end
     end
@@ -181,8 +196,7 @@ def create_cedar_field(orig_field, bp_ontologies, bp_terms)
       vc["classes"] = classes
     end
 
-    cedar_field["properties"].delete("@value")
-    cedar_field["properties"]["@id"] = {"type" => "string", "format" => "uri"}
+    cedar_field = enable_uri_value_for_field(cedar_field)
   end
 
   cedar_field
@@ -194,6 +208,11 @@ def empty_field?(cedar_field)
   (vc["valueSets"].nil? || vc["valueSets"].empty?) && \
   (vc["branches"].nil? || vc["branches"].empty?) && \
   (vc["classes"].nil? || vc["classes"].empty?)
+end
+
+def convert_to_uri_field(cedar_field)
+  cedar_field["_ui"]["inputType"] = "link"
+  enable_uri_value_for_field(cedar_field)
 end
 
 def add_field_or_element(orig_field_or_elem, cedar_field_or_elem, cedar_template)
@@ -213,7 +232,9 @@ def add_fields_to_template(orig_fields, cedar_template, bp_ontologies, bp_terms)
 
   orig_fields.each do |orig_field|
     cedar_field = create_cedar_field(orig_field, bp_ontologies, bp_terms)
-    add_field_or_element(orig_field, cedar_field, cedar_template) unless empty_field?(cedar_field)
+    # create a URI field if no values are provided
+    cedar_field = convert_to_uri_field(cedar_field) if empty_field?(cedar_field)
+    add_field_or_element(orig_field, cedar_field, cedar_template)
   end
 
   cedar_template["pav:lastUpdatedOn"] = DateTime.now.strftime
@@ -242,6 +263,21 @@ def add_elements_to_template(orig_elements, cedar_template, bp_ontologies, bp_te
 
   cedar_template["pav:lastUpdatedOn"] = DateTime.now.strftime
   cedar_template
+end
+
+def extract_cedar_elements(bao_cedar_template)
+  cedar_elements = {}
+  base_element_json = File.read(Global.config.cedar_template % {name: "element"})
+  base_element = MultiJson.load(base_element_json)
+  template_properties = bao_cedar_template["properties"]
+
+  template_properties.each do |key, prop|
+    if prop.class == Hash && prop.key?("@id") && prop.key?("@type") && prop["@type"] === base_element["@type"]
+      cedar_elements[key] = JSON.pretty_generate(prop)
+    end
+  end
+
+  cedar_elements
 end
 
 def create_cedar_template(orig_template_data, bp_ontologies, bp_terms)
@@ -292,6 +328,18 @@ def parse_options()
   options
 end
 
+def puts_and_log(logger, msg, type='info')
+  puts msg
+  case type
+  when 'warn'
+    logger.warn(msg)
+  when 'error'
+    logger.error(msg)
+  else
+    logger.info(msg)
+  end
+end
+
 def main()
   response_post = {status_code: -1}
   bao_full_template = nil
@@ -301,33 +349,20 @@ def main()
   FileUtils.mkdir_p(dirname) unless File.directory?(dirname)
   logger = Logger.new(options[:log_file])
 
-  msg = "Generating CEDAR template..."
-  puts msg
-  logger.info(msg)
-
+  puts_and_log logger, "Generating CEDAR template..."
   puts "Logging output to #{options[:log_file]}"
-
-  msg = "Source template: #{options[:input_file] === :github ? BAO_GITHUB_PATH : options[:input_file]}"
-  puts msg
-  logger.info(msg)
-
-  msg = "Destination template: #{options[:output_file]}"
-  puts msg
-  logger.info(msg)
+  puts_and_log logger, "Source template: #{options[:input_file] === :github ? BAO_GITHUB_PATH : options[:input_file]}"
+  puts_and_log logger, "Destination template: #{options[:output_file]}"
 
   time = Benchmark.realtime do
     bp_ontologies = get_bp_ontologies()
     bp_terms = {}
 
     if options[:input_file] === :github
-      msg = "Downloading source template from Github..."
-      puts msg
-      logger.info(msg)
+      puts_and_log logger, "Downloading source template from Github..."
       bao_full_template = get_bao_template_from_github()
       sleep(1)
-      msg = "Source template downloaded successfully. Processing..."
-      puts msg
-      logger.info(msg)
+      puts_and_log logger, "Source template downloaded successfully. Processing..."
     else
       bao_full_template = File.read(options[:input_file])
     end
@@ -340,61 +375,50 @@ def main()
       f.write(bao_cedar_template_json)
     end
 
-    msg = "Completed generating the new template."
-    puts msg
-    logger.info(msg)
-
-    msg = "Running the template through the CEDAR validator..."
-    puts msg
-    logger.info(msg)
+    puts_and_log logger, "Completed generating the new template."
+    puts_and_log logger, "Running the template through the CEDAR validator..."
 
     response_validate = validate_cedar_template(bao_cedar_template_json)
     resp_validate = response_validate[:response]
 
     if resp_validate["validates"] === "true"
-      msg = "New template validated successfully."
-      puts msg
-      logger.info(msg)
+      puts_and_log logger, "New template validated successfully."
 
       if options[:post_to_cedar]
-        msg = "Uploading new template to CEDAR..."
-        puts msg
-        logger.info(msg)
+        puts_and_log logger, "Uploading new template to CEDAR..."
 
-        response_post = post_template_to_cedar(bao_cedar_template_json)
+        response_post = post_template_to_cedar(bao_cedar_template_json, 'template')
 
         if response_post[:status_code] === RESPONSE_UPLOAD_SUCCESS
-          msg = "New template successfully uploaded to CEDAR."
-          puts msg
-          logger.info(msg)
+          puts_and_log logger, "New template successfully uploaded to CEDAR."
+          puts_and_log logger, "Uploading new template elements to CEDAR..."
+
+          all_elements = extract_cedar_elements(bao_cedar_template)
+
+          all_elements.each do |name, elem|
+            response_post = post_template_to_cedar(elem, 'element')
+
+            if response_post[:status_code] === RESPONSE_UPLOAD_SUCCESS
+              puts_and_log logger, "Element '#{name}' successfully uploaded to CEDAR..."
+            else
+              puts_and_log logger, "Element '#{name}' failed CEDAR upload with the following feedback (logged in #{options[:log_file]}):"
+              puts_and_log logger, "\nResponse Code: #{response_post[:status_code]}\n#{JSON.pretty_generate(response_post[:response])}"
+            end
+          end
         else
-          resp = response_post[:response]
-
-          msg = "New template failed CEDAR upload with the following feedback (logged in #{options[:log_file]}):"
-          puts msg
-          logger.info(msg)
-
-          msg = "\nResponse Code: #{response_post[:status_code]}\n#{JSON.pretty_generate(response_post[:response])}"
-          puts msg
-          logger.error(msg)
+          puts_and_log logger, "New template failed CEDAR upload with the following feedback (logged in #{options[:log_file]}):"
+          puts_and_log logger, "\nResponse Code: #{response_post[:status_code]}\n#{JSON.pretty_generate(response_post[:response])}"
         end
       end
-
     else
-      msg = "New template failed validation with the following feedback (logged in #{options[:log_file]}):"
-      puts msg
-      logger.info(msg)
+      puts_and_log logger, "New template failed validation with the following feedback (logged in #{options[:log_file]}):"
 
       unless resp_validate["errors"].empty?
-        msg = "\nErrors:   #{JSON.pretty_generate(resp_validate["errors"])}"
-        puts msg
-        logger.error(msg)
+        puts_and_log logger, "\nErrors:   #{JSON.pretty_generate(resp_validate["errors"])}", 'error'
       end
 
       unless resp_validate["warnings"].empty?
-        msg = "\nWarnings: #{JSON.pretty_generate(resp_validate["warnings"])}"
-        puts msg
-        logger.warn(msg)
+        puts_and_log logger, "\nWarnings: #{JSON.pretty_generate(resp_validate["warnings"])}", 'warn'
       end
       puts
     end
@@ -405,8 +429,7 @@ def main()
   else
     msg = "Completed template conversion and validation in #{time} seconds."
   end
-  puts msg
-  logger.info(msg)
+  puts_and_log logger, msg
 end
 
 main()

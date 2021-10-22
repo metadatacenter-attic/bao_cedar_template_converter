@@ -4,6 +4,7 @@
   "@context": {
     "xsd": "http://www.w3.org/2001/XMLSchema#",
     "pav": "http://purl.org/pav/",
+    "bibo": "http://purl.org/ontology/bibo/",
     "oslc": "http://open-services.net/ns/core#",
     "schema": "http://schema.org/",
     "schema:name": {
@@ -256,5 +257,7 @@
   "oslc:modifiedBy": "https://metadatacenter.org/users/5db4afaf-aef3-476c-ae29-01676e1ceb15",
   "schema:schemaVersion": "1.3.0",
   "additionalProperties": false,
+  "pav:version": "0.0.1",
+  "bibo:status": "bibo:draft",
   "$schema": "http://json-schema.org/draft-04/schema#"
 }

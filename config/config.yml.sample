@@ -4,6 +4,7 @@ default:
   bao_github_template_path: "/data/template/schema.json"
   cedar_template: "templates/cedar-base-%{name}.json"
   default_input_file: "data/bao-schema.json"
+  github_input_file: "data/bao-schema-github.json"
   default_output_file: "data/cedar-bao-schema.json"
   default_log_file_path: "logs/bao-to-cedar.log"
   bp_base_rest_url: "http://data.bioontology.org"

@@ -32,7 +32,8 @@
   "_ui": {
     "pages": [],
     "order": [],
-    "propertyLabels": {}
+    "propertyLabels": {},
+    "propertyDescriptions": {}
   },
   "properties": {
     "@context": {
@@ -72,6 +73,24 @@
           "enum": [
             "http://open-services.net/ns/core#"
           ]
+        },
+        "skos": {
+          "type": "string",
+          "format": "uri",
+          "enum": [
+            "http://www.w3.org/2004/02/skos/core#"
+          ]
+        },
+        "skos:notation": {
+          "type": "object",
+          "properties": {
+            "@type": {
+              "type": "string",
+              "enum": [
+                "xsd:string"
+              ]
+            }
+          }
         },
         "rdfs:label": {
           "type": "object",
@@ -128,6 +147,17 @@
             }
           }
         },
+        "pav:derivedFrom": {
+          "type": "object",
+          "properties": {
+            "@type": {
+              "type": "string",
+              "enum": [
+                "@id"
+              ]
+            }
+          }
+        },
         "pav:createdBy": {
           "type": "object",
           "properties": {
@@ -178,7 +208,10 @@
       "additionalProperties": false
     },
     "@id": {
-      "type": "string",
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "uri"
     },
     "@type": {
@@ -215,6 +248,10 @@
         "null"
       ],
       "format": "date-time"
+    },
+    "pav:derivedFrom": {
+      "type": "string",
+      "format": "uri"
     },
     "pav:createdBy": {
       "type": [
@@ -255,7 +292,7 @@
   "pav:createdBy": "https://metadatacenter.org/users/5db4afaf-aef3-476c-ae29-01676e1ceb15",
   "pav:lastUpdatedOn": "%{created_on}",
   "oslc:modifiedBy": "https://metadatacenter.org/users/5db4afaf-aef3-476c-ae29-01676e1ceb15",
-  "schema:schemaVersion": "1.3.0",
+  "schema:schemaVersion": "1.6.0",
   "additionalProperties": false,
   "pav:version": "0.0.1",
   "bibo:status": "bibo:draft",

@@ -220,6 +220,7 @@ def add_field_or_element(orig_field_or_elem, cedar_field_or_elem, cedar_template
   cedar_template["properties"][field_name] = cedar_field_or_elem
   cedar_template["_ui"]["order"] << field_name
   cedar_template["_ui"]["propertyLabels"][field_name] = field_name
+  cedar_template["_ui"]["propertyDescriptions"][field_name] = "Help Text"
   cedar_template["properties"]["@context"]["properties"][field_name] = {"enum" => [orig_field_or_elem["propURI"] || orig_field_or_elem["groupURI"]]}
   cedar_template["properties"]["@context"]["required"] = [] if cedar_template["properties"]["@context"]["required"].nil?
   cedar_template["properties"]["@context"]["required"] << field_name
@@ -361,8 +362,14 @@ def main()
     if options[:input_file] === :github
       puts_and_log logger, "Downloading source template from Github..."
       bao_full_template = get_bao_template_from_github()
+
+      # save BAO schema downloaded from Github
+      File.open(Global.config.github_input_file, "w") do |f|
+        f.write(bao_full_template)
+      end
+
       sleep(1)
-      puts_and_log logger, "Source template downloaded successfully. Processing..."
+      puts_and_log logger, "Source template downloaded and saved successfully. Processing..."
     else
       bao_full_template = File.read(options[:input_file])
     end
@@ -390,7 +397,7 @@ def main()
         response_post = post_template_to_cedar(bao_cedar_template_json, 'template')
 
         if response_post[:status_code] === RESPONSE_UPLOAD_SUCCESS
-          puts_and_log logger, "New template successfully uploaded to CEDAR."
+          puts_and_log logger, "New template '#{bao_cedar_template["schema:name"]}' successfully uploaded to CEDAR."
           puts_and_log logger, "Uploading new template elements to CEDAR..."
 
           all_elements = extract_cedar_elements(bao_cedar_template)

@@ -4,12 +4,20 @@
   "@context": {
     "xsd": "http://www.w3.org/2001/XMLSchema#",
     "pav": "http://purl.org/pav/",
+    "bibo": "http://purl.org/ontology/bibo/",
     "oslc": "http://open-services.net/ns/core#",
     "schema": "http://schema.org/",
+    "skos": "http://www.w3.org/2004/02/skos/core#",
     "schema:name": {
       "@type": "xsd:string"
     },
     "schema:description": {
+      "@type": "xsd:string"
+    },
+    "skos:prefLabel": {
+      "@type": "xsd:string"
+    },
+    "skos:altLabel": {
       "@type": "xsd:string"
     },
     "pav:createdOn": {
@@ -65,16 +73,13 @@
       ]
     }
   },
-  "required": [
-    "@value"
-  ],
   "schema:name": "%{name}",
   "schema:description": "%{descr}",
   "pav:createdOn": "%{created_on}",
   "pav:createdBy": "https://metadatacenter.org/users/5db4afaf-aef3-476c-ae29-01676e1ceb15",
   "pav:lastUpdatedOn": "%{created_on}",
   "oslc:modifiedBy": "https://metadatacenter.org/users/5db4afaf-aef3-476c-ae29-01676e1ceb15",
-  "schema:schemaVersion": "1.3.0",
+  "schema:schemaVersion": "1.6.0",
   "additionalProperties": false,
   "$schema": "http://json-schema.org/draft-04/schema#"
 }

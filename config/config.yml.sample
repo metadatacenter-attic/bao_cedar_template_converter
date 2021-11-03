@@ -7,7 +7,7 @@ default:
   github_input_file: "data/bao-schema-github.json"
   default_output_file: "data/cedar-bao-schema.json"
   default_log_file_path: "logs/bao-to-cedar.log"
-  bp_base_rest_url: "http://data.bioontology.org"
+  bp_base_rest_url: "https://data.bioontology.org"
   bp_search_endpoint: "/search"
   bp_ontologies_endpoint: "/ontologies"
   cedar_base_rest_url: "https://resource.metadatacenter.org"

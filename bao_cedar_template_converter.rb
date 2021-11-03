@@ -310,9 +310,10 @@ def parse_options()
       options[:log_file] = v
     }
 
-    opts.on('-p', '--post-to-cedar [true/false]', 'Post template to CEDAR (if it passes validation) (default: false)') do
-      options[:post_to_cedar] = true
-    end
+    opts.on('-p', '--post-to-cedar [true/false]', 'Post template to CEDAR (if it passes validation) (default: false)') { |v|
+      options[:post_to_cedar] = v
+      options[:post_to_cedar] = false unless options[:post_to_cedar] == 'true'
+    }
 
     opts.on('-h', '--help', 'Display this screen') do
       puts opts

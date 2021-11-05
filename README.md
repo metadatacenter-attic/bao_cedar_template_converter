@@ -12,6 +12,8 @@ This is an __OPTIONAL__ step for those who don't have a functioning Ruby environ
 
 https://brew.sh/
 
+1. Run this command in your Terminal/Bash:
+
 ```shell
 $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
@@ -20,7 +22,7 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 
 https://github.com/rbenv/rbenv
 
-1. Install and update dependent libraries
+1. Install and update rbenv dependent libraries:
 
 ```shell
 $ brew install rbenv
@@ -44,7 +46,7 @@ $ rbenv install 3.0.2
 $ rbenv global 3.0.2
 ```
 
-3. Check the installed Ruby version
+3. Check the installed Ruby version:
 
 ```shell
 $ rbenv versions

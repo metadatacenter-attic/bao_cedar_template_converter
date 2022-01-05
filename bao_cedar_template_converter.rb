@@ -67,7 +67,6 @@ def get_bp_ontologies()
   else
     raise Exception, "Unable to query BioPortal #{Global.config.bp_ontologies_endpoint} endpoint. Response code: #{response_raw.code}."
   end
-
   bp_ontologies
 end
 
@@ -84,7 +83,6 @@ def find_term_in_bioportal(term_id)
   else
     raise Exception, "Unable to query BioPortal #{Global.config.bp_search_endpoint} endpoint. Response code: #{response_raw.code}."
   end
-
   term
 end
 
@@ -102,7 +100,6 @@ def post_template_to_cedar(cedar_template_json, template_type)
   else
     endpoint = Global.config.cedar_templates_endpoint
   end
-
   cedar_template = MultiJson.load(cedar_template_json)
   cedar_template.delete("@id")
   cedar_template.delete("pav:createdOn")
@@ -119,7 +116,6 @@ def post_template_to_cedar(cedar_template_json, template_type)
   rescue Exception => e
     resp = {status_code: e.http_code, response: MultiJson.load(e.http_body)}
   end
-
   resp
 end
 
@@ -382,7 +378,6 @@ def extract_cedar_elements(bao_cedar_template)
       cedar_elements[key] = JSON.pretty_generate(prop)
     end
   end
-
   cedar_elements
 end
 
@@ -425,7 +420,6 @@ def parse_options()
       exit
     end
   end
-
   opt_parser.parse!
   options[:input_file] ||= :github
   options[:output_file] ||= Global.config.default_output_file

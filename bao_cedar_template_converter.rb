@@ -11,6 +11,24 @@ require_relative 'lib/config'
 RESPONSE_UPLOAD_SUCCESS = 201
 RESPONSE_OK = 200
 BAO_GITHUB_PATH = "https://github.com/#{Global.config.bao_github_repo_user}/#{Global.config.bao_template_github_repo}/blob/master#{Global.config.bao_github_template_path}"
+BAO_INTPUT_TYPE_SUGGESTIONS_ENUM = {
+  full: 'full',         # (default) use all of the available methods for guesstimating appropriate term suggestions for URIs
+  disabled: 'disabled', # do not use the underlying terms as either inputs or outputs for suggestion models
+  field: 'field',       # the assignment should be mapped to an auxiliary compound field rather than a URI
+  url: 'url',           # preferred value type is a URL that directs to an external resource
+  id: 'id',             # preferred value an identifier that refers to another assay
+  string: 'string',     # preferred value type is a string literal, of arbitrary format
+  number: 'number',     # preferred value type is a numeric literal of arbitrary precision
+  integer: 'integer',   # preferred value type is a literal that evaluates to an integer
+  date: 'date'          # preferred value type is a date
+}
+BAO_SPEC_FIELD_ENUM = {
+  item: 'item',                   # the term specified by the URL is explicitly whitelisted
+  exclude: 'exclude',             # explicitly blacklist the term (i.e. exclude it from a branch within which it was previously included)
+  wholebranch: 'wholebranch',     # incline the term specified and everything descended from it
+  excludebranch: 'excludebranch', # exclude a whole branch that had previously been included
+  container: 'container'          # same as whole branch, except the term itself should not be explicitly selected
+}
 
 def sanitize_input_for_json(str)
   str.gsub("\"", "'").gsub(/[\r\n\t]/, " ")
@@ -106,10 +124,13 @@ def post_template_to_cedar(cedar_template_json, template_type)
 end
 
 def usable_value(val)
-  (val["wholeBranch"] && val["wholeBranch"] == "true") || val["exclude"].nil? || val["exclude"] != true
+  if val.key?("spec")
+    return [BAO_SPEC_FIELD_ENUM[:item], BAO_SPEC_FIELD_ENUM[:wholebranch], BAO_SPEC_FIELD_ENUM[:container]].include?(val["spec"])
+  end
+  false
 end
 
-def create_cedar_value(orig_value, bp_ontologies, bp_terms)
+def create_cedar_controlled_value(orig_value, bp_ontologies, bp_terms)
   cedar_value = false
   not_found = "Not Found"
 
@@ -130,89 +151,176 @@ def create_cedar_value(orig_value, bp_ontologies, bp_terms)
         "source" => "#{bp_ontologies[ont_acronym]} (#{ont_acronym})"
       }
 
-      if orig_value["wholeBranch"] && orig_value["wholeBranch"] == true
-        cedar_val.merge!({
+      if [BAO_SPEC_FIELD_ENUM[:container], BAO_SPEC_FIELD_ENUM[:wholebranch]].include?(orig_value["spec"])
+        branch_val = cedar_val.dup.merge({
           "acronym" => ont_acronym,
           "name" => bp_term["prefLabel"],
           "maxDepth" => 0
         })
-        cedar_value["branch"] = cedar_val
-      else
-        cedar_val.merge!({
+        cedar_value["branch"] = branch_val
+      end
+
+      if [BAO_SPEC_FIELD_ENUM[:item], BAO_SPEC_FIELD_ENUM[:wholebranch]].include?(orig_value["spec"])
+        class_val = cedar_val.dup.merge({
           "prefLabel" => bp_term["prefLabel"],
           "label" => bp_term["prefLabel"],
           "type" => "OntologyClass"
         })
-        cedar_value["class"] = cedar_val
+        cedar_value["class"] = class_val
       end
     end
   end
-
   cedar_value
 end
 
 def enable_uri_value_for_field(cedar_field)
   cedar_field["properties"].delete("@value")
-  cedar_field["properties"]["@id"] = {"type" => "string", "format" => "uri"}
+  cedar_field["properties"]["@id"] = {
+    "type" => "string",
+    "format" => "uri"
+  }
+end
+
+def default_property_type()
+  {
+    "oneOf": [
+      {
+        "type": "string",
+        "format": "uri"
+      },
+      {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string",
+          "format": "uri"
+        },
+        "uniqueItems": true
+      }
+    ]
+  }
+end
+
+def create_base_cedar_field(orig_field)
+  base_cedar_field = create_base_entity(orig_field, "field")
+  cedar_field = MultiJson.load(base_cedar_field)
+
+  if orig_field.key?("mandatory") && orig_field["mandatory"] == true
+    cedar_field["_valueConstraints"]["requiredValue"] = true
+  end
+  cedar_field
+end
+
+def create_controlled_field(orig_field, bp_ontologies, bp_terms)
+  if !orig_field["values"] || orig_field["values"].empty?
+    return create_freetext_field(orig_field)
+  end
+  cedar_field = create_base_cedar_field(orig_field)
+  cedar_field["properties"]["@type"] = default_property_type
+  cedar_field["_ui"]["inputType"] = "textfield"
+  enable_uri_value_for_field(cedar_field)
+  cedar_field["_valueConstraints"]["multipleChoice"] = false
+  cedar_field["_valueConstraints"]["ontologies"] = []
+  cedar_field["_valueConstraints"]["valueSets"] = []
+  cedar_field["_valueConstraints"]["classes"] = []
+  cedar_field["_valueConstraints"]["branches"] = []
+  branches = []
+  classes = []
+
+  orig_field["values"].each do |original_val|
+    converted_val = create_cedar_controlled_value(original_val, bp_ontologies, bp_terms)
+
+    if converted_val
+      converted_val.each do |key, val|
+        case key
+        when "branch"
+          branches << val
+        when "class"
+          classes << val
+        end
+      end
+    end
+  end
+
+  # what if branches and classes are both empty???
+  # for now, create a freetext field
+  if branches.empty? && classes.empty?
+    return create_freetext_field(orig_field)
+  end
+  vc = cedar_field["_valueConstraints"]
+  vc["branches"].concat(branches)
+  vc["classes"].concat(classes)
+  enable_uri_value_for_field(cedar_field)
+  cedar_field
+end
+
+def create_freetext_field(orig_field)
+  cedar_field = create_base_cedar_field(orig_field)
+  cedar_field["properties"]["@type"] = default_property_type
+  cedar_field["_ui"]["inputType"] = "textfield"
+  cedar_field["required"] = ["@value"]
+  cedar_field
+end
+
+def create_date_field(orig_field)
+  cedar_field = create_base_cedar_field(orig_field)
+  cedar_field["properties"]["@type"] = default_property_type
+  cedar_field["_ui"]["inputType"] = "temporal"
+  cedar_field["_ui"]["temporalGranularity"] = "day"
+  cedar_field["required"] = ["@value"]
+  cedar_field["_valueConstraints"]["temporalType"] = "xsd:date"
+  cedar_field
+end
+
+def create_numeric_field(orig_field)
+  cedar_field = create_base_cedar_field(orig_field)
+  cedar_field["properties"]["@type"] = {
+    "type": "string",
+    "format": "uri"
+  }
+  cedar_field["_ui"]["inputType"] = "numeric"
+  cedar_field["required"] = ["@value", "@type"]
+  cedar_field["_valueConstraints"]["numberType"] = "xsd:decimal"
+  cedar_field
+end
+
+def create_integer_field(orig_field)
+  cedar_field = create_base_cedar_field(orig_field)
+  enable_numeric_field(cedar_field)
+  cedar_field["_valueConstraints"]["numberType"] = "xsd:int"
+  cedar_field["_valueConstraints"]["decimalPlace"] = 0
+  cedar_field
+end
+
+def create_uri_field(orig_field)
+  cedar_field = create_base_cedar_field(orig_field)
+  cedar_field["properties"]["@type"] = default_property_type
+  cedar_field["_ui"]["inputType"] = "link"
+  enable_uri_value_for_field(cedar_field)
   cedar_field
 end
 
 def create_cedar_field(orig_field, bp_ontologies, bp_terms)
-  base_cedar_field = create_base_entity(orig_field, "field")
-  cedar_field = MultiJson.load(base_cedar_field)
+  bao_field_type = orig_field["suggestions"] || BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:url]
+  cedar_field = nil
 
-  if orig_field["values"] && !orig_field["values"].empty?
-    branches = []
-    classes = []
-
-    orig_field["values"].each do |original_val|
-      converted_val = create_cedar_value(original_val, bp_ontologies, bp_terms)
-
-      if converted_val
-        key, value = converted_val.first
-
-        case key
-        when "branch"
-          branches << value
-        when "class"
-          classes << value
-        end
-      end
-    end
-
-    vc = cedar_field["_valueConstraints"]
-    vc["ontologies"] = []
-    vc["valueSets"] = []
-
-    if branches.empty?
-      vc["branches"] = []
-    else
-      vc["branches"] = branches
-    end
-
-    if classes.empty?
-      vc["classes"] = []
-    else
-      vc["classes"] = classes
-    end
-
-    cedar_field = enable_uri_value_for_field(cedar_field)
+  case bao_field_type
+  when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:full]
+    cedar_field = create_controlled_field(orig_field, bp_ontologies, bp_terms)
+  when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:url]
+    cedar_field = create_uri_field(orig_field)
+  when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:string]
+    cedar_field = create_freetext_field(orig_field)
+  when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:number]
+    cedar_field = create_numeric_field(orig_field)
+  when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:integer]
+    cedar_field = create_integer_field(orig_field)
+  when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:date]
+    cedar_field = create_date_field(orig_field)
+  else
+    cedar_field = create_uri_field(orig_field)
   end
-
   cedar_field
-end
-
-def empty_field?(cedar_field)
-  vc = cedar_field["_valueConstraints"]
-  (vc["ontologies"].nil? || vc["ontologies"].empty?) && \
-  (vc["valueSets"].nil? || vc["valueSets"].empty?) && \
-  (vc["branches"].nil? || vc["branches"].empty?) && \
-  (vc["classes"].nil? || vc["classes"].empty?)
-end
-
-def convert_to_uri_field(cedar_field)
-  cedar_field["_ui"]["inputType"] = "link"
-  enable_uri_value_for_field(cedar_field)
 end
 
 def add_field_or_element(orig_field_or_elem, cedar_field_or_elem, cedar_template)
@@ -233,11 +341,8 @@ def add_fields_to_template(orig_fields, cedar_template, bp_ontologies, bp_terms)
 
   orig_fields.each do |orig_field|
     cedar_field = create_cedar_field(orig_field, bp_ontologies, bp_terms)
-    # create a URI field if no values are provided
-    cedar_field = convert_to_uri_field(cedar_field) if empty_field?(cedar_field)
     add_field_or_element(orig_field, cedar_field, cedar_template)
   end
-
   cedar_template["pav:lastUpdatedOn"] = DateTime.now.strftime
   cedar_template
 end
@@ -311,8 +416,8 @@ def parse_options()
     }
 
     opts.on('-p', '--post-to-cedar [true/false]', 'Post template to CEDAR (if it passes validation) (default: false)') { |v|
-      options[:post_to_cedar] = v
-      options[:post_to_cedar] = false unless options[:post_to_cedar] == 'true'
+      options[:post_to_cedar] = false
+      options[:post_to_cedar] = true if v == 'true'
     }
 
     opts.on('-h', '--help', 'Display this screen') do

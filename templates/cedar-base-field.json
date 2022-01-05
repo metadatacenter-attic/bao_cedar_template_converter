@@ -43,23 +43,6 @@
     "requiredValue": false
   },
   "properties": {
-    "@type": {
-      "oneOf": [
-        {
-          "type": "string",
-          "format": "uri"
-        },
-        {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "string",
-            "format": "uri"
-          },
-          "uniqueItems": true
-        }
-      ]
-    },
     "@value": {
       "type": [
         "string",

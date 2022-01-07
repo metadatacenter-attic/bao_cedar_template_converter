@@ -30,6 +30,9 @@ BAO_SPEC_FIELD_ENUM = {
   container: 'container'          # same as whole branch, except the term itself should not be explicitly selected
 }
 
+UNKNOWN_ONTOLOGY = "Unknown Ontology"
+
+
 def sanitize_input_for_json(str)
   str.gsub("\"", "'").gsub(/[\r\n\t]/, " ")
 end
@@ -121,7 +124,11 @@ end
 
 def usable_value(val)
   if val.key?("spec")
-    return [BAO_SPEC_FIELD_ENUM[:item], BAO_SPEC_FIELD_ENUM[:wholebranch], BAO_SPEC_FIELD_ENUM[:container]].include?(val["spec"])
+    return [BAO_SPEC_FIELD_ENUM[:item],
+            BAO_SPEC_FIELD_ENUM[:wholebranch],
+            BAO_SPEC_FIELD_ENUM[:container],
+            BAO_SPEC_FIELD_ENUM[:exclude]
+    ].include?(val["spec"])
   end
   false
 end
@@ -138,33 +145,52 @@ def create_cedar_controlled_value(orig_value, bp_ontologies, bp_terms)
       bp_term = find_term_in_bioportal(orig_value["uri"])
       bp_terms[orig_value["uri"]] = bp_term = not_found unless bp_term
     end
+    cedar_value = {}
+    cedar_val = {
+      "uri" => orig_value["uri"]
+    }
 
     if bp_term != not_found
       ont_acronym = get_acronym_from_id(bp_term["links"]["ontology"])
-      cedar_value = {}
-      cedar_val = {
-        "uri" => orig_value["uri"],
-        "source" => "#{bp_ontologies[ont_acronym]} (#{ont_acronym})"
-      }
+      cedar_val["source"] = "#{bp_ontologies[ont_acronym]} (#{ont_acronym})"
 
-      if [BAO_SPEC_FIELD_ENUM[:container], BAO_SPEC_FIELD_ENUM[:wholebranch]].include?(orig_value["spec"])
-        branch_val = cedar_val.dup.merge({
-          "acronym" => ont_acronym,
-          "name" => bp_term["prefLabel"],
-          "maxDepth" => 0
+      if BAO_SPEC_FIELD_ENUM[:exclude] == orig_value["spec"]
+        cedar_val["termUri"] = cedar_val.delete("uri")
+        cedar_val["sourceUri"] = cedar_val["termUri"]
+        action_val = cedar_val.dup.merge({
+          "type" => "OntologyClass",
+          "action" => "delete"
         })
-        cedar_value["branch"] = branch_val
-      end
+        cedar_value["action"] = action_val
+      else
+        if [BAO_SPEC_FIELD_ENUM[:container], BAO_SPEC_FIELD_ENUM[:wholebranch]].include?(orig_value["spec"])
+          branch_val = cedar_val.dup.merge({
+            "acronym" => ont_acronym,
+            "name" => bp_term["prefLabel"],
+            "maxDepth" => 0
+          })
+          cedar_value["branch"] = branch_val
+        end
 
-      if [BAO_SPEC_FIELD_ENUM[:item], BAO_SPEC_FIELD_ENUM[:wholebranch]].include?(orig_value["spec"])
-        class_val = cedar_val.dup.merge({
-          "prefLabel" => bp_term["prefLabel"],
-          "label" => bp_term["prefLabel"],
-          "type" => "OntologyClass"
-        })
-        cedar_value["class"] = class_val
+        if [BAO_SPEC_FIELD_ENUM[:item], BAO_SPEC_FIELD_ENUM[:wholebranch]].include?(orig_value["spec"])
+          class_val = cedar_val.dup.merge({
+            "prefLabel" => bp_term["prefLabel"],
+            "label" => bp_term["prefLabel"],
+            "type" => "OntologyClass"
+          })
+          cedar_value["class"] = class_val
+        end
       end
+    elsif BAO_SPEC_FIELD_ENUM[:item] == orig_value["spec"]
+      class_val = cedar_val.dup.merge({
+        "source" => UNKNOWN_ONTOLOGY,
+        "prefLabel" => orig_value["name"],
+        "label" => orig_value["name"],
+        "type" => "OntologyClass"
+      })
+      cedar_value["class"] = class_val
     end
+    cedar_value = false if cedar_value.empty?
   end
   cedar_value
 end
@@ -222,6 +248,7 @@ def create_controlled_field(orig_field, bp_ontologies, bp_terms)
   cedar_field["_valueConstraints"]["branches"] = []
   branches = []
   classes = []
+  actions = []
 
   orig_field["values"].each do |original_val|
     converted_val = create_cedar_controlled_value(original_val, bp_ontologies, bp_terms)
@@ -229,10 +256,12 @@ def create_controlled_field(orig_field, bp_ontologies, bp_terms)
     if converted_val
       converted_val.each do |key, val|
         case key
-        when "branch"
-          branches << val
-        when "class"
-          classes << val
+          when "branch"
+            branches << val
+          when "class"
+            classes << val
+          when "action"
+            actions << val
         end
       end
     end
@@ -246,6 +275,7 @@ def create_controlled_field(orig_field, bp_ontologies, bp_terms)
   vc = cedar_field["_valueConstraints"]
   vc["branches"].concat(branches)
   vc["classes"].concat(classes)
+  vc["actions"] = actions unless actions.empty?
   enable_uri_value_for_field(cedar_field)
   cedar_field
 end
@@ -301,20 +331,22 @@ def create_cedar_field(orig_field, bp_ontologies, bp_terms)
   cedar_field = nil
 
   case bao_field_type
-  when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:full]
-    cedar_field = create_controlled_field(orig_field, bp_ontologies, bp_terms)
-  when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:url]
-    cedar_field = create_uri_field(orig_field)
-  when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:string]
-    cedar_field = create_freetext_field(orig_field)
-  when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:number]
-    cedar_field = create_numeric_field(orig_field)
-  when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:integer]
-    cedar_field = create_integer_field(orig_field)
-  when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:date]
-    cedar_field = create_date_field(orig_field)
-  else
-    cedar_field = create_uri_field(orig_field)
+    # ignore suggestion and treat field as controlled if values are present
+    # per @alexclark, I think that's a bug in our template, there shouldn't
+    # be any values listed for the URL type. The easy solution is just to
+    # ignore it, and we should fix that on our end too.
+    when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:full] || !orig_field["values"]&.empty?
+      cedar_field = create_controlled_field(orig_field, bp_ontologies, bp_terms)
+    when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:string]
+      cedar_field = create_freetext_field(orig_field)
+    when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:number]
+      cedar_field = create_numeric_field(orig_field)
+    when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:integer]
+      cedar_field = create_integer_field(orig_field)
+    when BAO_INTPUT_TYPE_SUGGESTIONS_ENUM[:date]
+      cedar_field = create_date_field(orig_field)
+    else
+      cedar_field = create_uri_field(orig_field)
   end
   cedar_field
 end
